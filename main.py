@@ -1,23 +1,21 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
+import requests
+import json
 
-from . import models, schemas, crud
-from .database import engine, SessionLocal
-
-# Import Base from models, not from database
-models.Base.metadata.create_all(bind=engine)
-
-app = FastAPI()
-
-# Dependency to get DB session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+API_URL = "http://127.0.0.1:8000/ride_request/"
 
 
-@app.post("/ride_request/", response_model=schemas.RideRequest)
-def create_ride_request(ride_request: schemas.RideRequestCreate, db: Session = Depends(get_db)):
-    return crud.create_ride_request(db=db, ride_request=ride_request)
+payload = {
+    "user_id": 1,
+    "source": "Bangalore",
+    "destination": "Mysore"
+}
+
+
+response = requests.post(API_URL, json=payload)
+
+if response.status_code == 200:
+    print("✅ Ride request created successfully!")
+    print("Response:", json.dumps(response.json(), indent=4))
+else:
+    print(" Failed with status code:", response.status_code)
+    print("Response:", response.text)
