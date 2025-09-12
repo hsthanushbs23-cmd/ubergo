@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div>
+                            <h4 class="mb-0">Driver Dashboard</h4>
+                            <p class="text-muted mb-0">
+                                Driver ID: <span id="driverId">{{ driver_id if driver_id else 'Not Set' }}</span> 
+                                | <span id="driverName">Loading...</span>
+                            </p>
+                        </div>
+                        <div>
+                            <span id="statusBadge" class="badge bg-success">Available</span>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info" role="alert">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Automatically refreshing rides every 60 seconds.
+                    </div>
+
+                    <div id="pendingRides" class="mb-4">
+                        <h5 class="mb-3">Available Rides</h5>
+                        <div id="ridesList" class="list-group">
+                            <!-- Rides will be dynamically added here -->
+                        </div>
+                    </div>
+
+                    <div id="myRides" class="mb-4">
+                        <h5 class="mb-3">My Rides</h5>
+                        <div id="myRidesList" class="list-group">
+                            <!-- Driver's accepted rides will be shown here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentDriverId = {{ driver_id if driver_id else 'null' }};
+
+// If no driver_id is set, ask for one
+if (!currentDriverId) {
+    const inputId = prompt("Please enter your Driver ID:");
+    if (inputId && !isNaN(inputId)) {
+        currentDriverId = parseInt(inputId);
+        window.history.replaceState({}, '', `?driver_id=${currentDriverId}`);
+        document.getElementById('driverId').textContent = currentDriverId;
+    }
+}
+
+// Function to get driver details and update display
+async function loadDriverInfo() {
+    if (!currentDriverId) return;
+    
+    try {
+        const response = await fetch(`/get_driver/${currentDriverId}`);
+        if (response.ok) {
+            const driver = await response.json();
+            document.getElementById('driverName').textContent = driver.name;
+        } else {
+            document.getElementById('driverName').textContent = `Driver ${currentDriverId}`;
+        }
+    } catch (error) {
+        console.error('Error fetching driver info:', error);
+        document.getElementById('driverName').textContent = `Driver ${currentDriverId}`;
+    }
+}
+
+// Function to format a ride as HTML
+function formatRide(ride, showAcceptButton = true) {
+    const rideHtml = `
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-1">Ride #${ride.id}</h6>
+                    <p class="mb-1">
+                        <i class="fas fa-map-marker-alt text-primary me-2"></i>${ride.source}<br>
+                        <i class="fas fa-map-pin text-danger me-2"></i>${ride.destination}
+                    </p>
+                    <small class="text-muted">Status: ${ride.status}</small>
+                </div>
+                <div>
+                    ${showAcceptButton ? `
+                        <button onclick="acceptRide(${ride.id})" class="btn btn-primary">
+                            <i class="fas fa-check me-2"></i>Accept Ride
+                        </button>
+                    ` : ride.status === 'accepted' ? `
+                        <button onclick="completeRide(${ride.id})" class="btn btn-success">
+                            <i class="fas fa-flag-checkered me-2"></i>Complete Ride
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+    return rideHtml;
+}
+
+// Function to refresh pending rides
+async function refreshPendingRides() {
+    try {
+        const response = await fetch('/rides/?status=pending');
+        const rides = await response.json();
+        
+        const ridesList = document.getElementById('ridesList');
+        ridesList.innerHTML = rides.length ? '' : '<p class="text-muted text-center my-4">No pending rides available.</p>';
+        
+        rides.forEach(ride => {
+            ridesList.innerHTML += formatRide(ride, true);
+        });
+    } catch (error) {
+        console.error('Error fetching pending rides:', error);
+    }
+}
+
+// Function to refresh driver's rides
+async function refreshMyRides() {
+    if (!currentDriverId) return;
+    
+    try {
+        const response = await fetch(`/my_rides/${currentDriverId}`);
+        const rides = await response.json();
+        
+        const myRidesList = document.getElementById('myRidesList');
+        myRidesList.innerHTML = rides.length ? '' : '<p class="text-muted text-center my-4">No rides yet.</p>';
+        
+        rides.forEach(ride => {
+            myRidesList.innerHTML += formatRide(ride, false);
+        });
+    } catch (error) {
+        console.error('Error fetching my rides:', error);
+    }
+}
+
+// Function to accept a ride
+async function acceptRide(rideId) {
+    if (!currentDriverId) {
+        alert('Please set your Driver ID first!');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/accept_ride/${rideId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                driver_id: currentDriverId
+            })
+        });
+
+        if (response.ok) {
+            // Update both ride lists
+            refreshPendingRides();
+            refreshMyRides();
+            // Update status badge
+            document.getElementById('statusBadge').className = 'badge bg-warning';
+            document.getElementById('statusBadge').textContent = 'Busy';
+        } else {
+            const error = await response.json();
+            alert('Error accepting ride: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error accepting ride:', error);
+        alert('Error accepting ride. Please try again.');
+    }
+}
+
+// Function to complete a ride
+async function completeRide(rideId) {
+    try {
+        const response = await fetch(`/complete_ride/${rideId}`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            // Update both ride lists
+            refreshPendingRides();
+            refreshMyRides();
+            // Update status badge
+            document.getElementById('statusBadge').className = 'badge bg-success';
+            document.getElementById('statusBadge').textContent = 'Available';
+        } else {
+            const error = await response.json();
+            alert('Error completing ride: ' + error.detail);
+        }
+    } catch (error) {
+        console.error('Error completing ride:', error);
+        alert('Error completing ride. Please try again.');
+    }
+}
+
+// Initial load
+loadDriverInfo();
+refreshPendingRides();
+refreshMyRides();
+
+// Set up auto-refresh every 60 seconds
+setInterval(() => {
+    refreshPendingRides();
+    refreshMyRides();
+}, 60000);
+</script>
+{% endblock %}
